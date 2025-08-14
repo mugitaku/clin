@@ -1,27 +1,41 @@
 import json
 
-import openai
 import time
 import re
 
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
-import tiktoken             # pip install tiktoken
+import tiktoken  # pip install tiktoken
 
 import numpy as np
+
+from openai import OpenAI  # For new client
 
 # Tokenizer
 from utils import remove_stopwords_and_lemmatize
 
 tokenizer = tiktoken.get_encoding("cl100k_base")
-MAXTOKENSINHISTORY = 2500
+MAXTOKENSINHISTORY = 2000
 
 # Get the number of tokens for a string, measured using tiktoken
 def getTokenLength(strIn):
     tokens = tokenizer.encode(strIn)
     numTokens = len(tokens)
     return numTokens
+
+
+def deduplicate_text(text: str) -> str:
+    """Deduplicate repeated sentences in text to reduce bloat."""
+    sentences = re.split(r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s', text)  # Split on sentence boundaries
+    seen = set()
+    unique_sentences = []
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if sentence and sentence not in seen:
+            seen.add(sentence)
+            unique_sentences.append(sentence)
+    return ' '.join(unique_sentences)
 
 
 def get_best_matched_action_using_sent_transformer(allowed_actions, query, model, device="cpu"):
@@ -84,10 +98,11 @@ def run_chatgpt_query_multi_turn(messages,
                       model_name="gpt-3.5-turbo",  # pass "gpt4" for more recent model output
                       max_tokens=256,
                       temperature=0.0):
+    client = OpenAI(base_url="http://localhost:4000/v1", api_key="EMPTY")  # Hardcode for local server
     response = None
     while response is None:
         try:
-            response = openai.ChatCompletion.create(
+            response = client.chat.completions.create(
                 model=model_name,
                 messages=messages,
                 max_tokens=max_tokens,
@@ -99,6 +114,7 @@ def run_chatgpt_query_multi_turn(messages,
             time.sleep(2)
 
     return response
+
 
 # Multi-turn dialogue for CLIN model : prev message history is summarized and learnings are inserted in the history
 def get_clin_sw_next_action_multi_turn(task,
@@ -116,7 +132,7 @@ def get_clin_sw_next_action_multi_turn(task,
                                        quadrant=1,
                                        feedback="",
                                        episodeIdx=None):
-    # We first ask the model to geberate goal (rationale) and then generate next action
+    # We first ask the model to generate goal (rationale) and then generate next action
 
     next_action_query = ""
 
@@ -146,7 +162,7 @@ def get_clin_sw_next_action_multi_turn(task,
         if quadrant == 3:
             if episodeIdx == 0:
                 sw_prompt_task += \
-                    f"Here is a summary of learnings based on your previous attempts to some tasks in your current environment." \
+                    f"Here is a summary of learnings based on your previous attempts to solve tasks in the SAME environment configuration that you are currently in. These learnings will contain related information about the environment such as presence of objects, starting location, navigational information, etc." \
                     f"These learnings capture important pre-conditions: X MAY BE NECESSARY to Y, X SHOULD BE NECESSARY to Y, and mistakes: X MAY NOT CONTRIBUTE to Y, X DOES NOT CONTRIBUTE to Y. Some of these learnings can be useful for predicting your next action:\n{summary}"
             else:
                 sw_prompt_task += \
@@ -240,7 +256,7 @@ def get_clin_sw_next_action_multi_turn(task,
                  f"\n\n" \
                  f"What action would you like to do next?\n" \
                  f"First, scan the (unordered) list of learnings, if provided. Decide if any of the learnings are applicable given the last observation to make progress in this task. Then only use selected learnings, if any, to construct a rationale for picking the next action. If no Learning is selected, construct the rationale based on the last observation. Format your response as follows:\n" \
-                 f"Write 'I used learning id(s):' as a comma separated list; the list can be empty if no learnings selected. Then, write $$$ followed by the rationale. Finally, write ### followed by the single next action you would like to take." \
+                 f"Write 'I used learning id(s):' as a comma separated list; the list can be empty if no no learnings selected. Then, write $$$ followed by the rationale. Finally, write ### followed by the single next action you would like to take." \
                  f"If you think you have completed the task, please write TASK_COMPLETE as the next action." \
                  f"If the task requires you to 'focus' on something (OBJ), please write FOCUS ON <OBJ> as the next action. FOCUS is a extremely critical action that can be only used the number of times 'focus' is mentioned in the task description. Using it more than that or inappropiately (such as on a wrong object) will terminate the session and the task will be rendered as incomplete." \
                  f"If you performed an action that requires waiting to see the effect, please write 'wait' as the next action."  \
@@ -267,21 +283,17 @@ def get_clin_sw_next_action_multi_turn(task,
     #       f"\nobjects_set: {objects_set}\nnext_actions_set:{next_actions_set}")
     # print(f"response:{response}")
     if out_logs_file:
-        out_logs_file.write(f"next action\t{prompt_str}\t{json.dumps(response)}")
+        out_logs_file.write(f"next action\t{prompt_str}\t{json.dumps(response.dict())}")  # Use .dict() for new lib
 
     # Sometimes ChatGPT returns a long string with actions mentioned in ""
     # Extract strings within double quotes
 
-    response_str = response['choices'][0]['message']['content']
-    response['response_str'] = response_str
+    response_str = response.choices[0].message.content
+    response_dict = response.dict()  # Convert to dict for compatibility
+    response_dict['response_str'] = response_str
     # print("RAW RESPONSE STRING:")
     # print(response_str)
     print("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
-
-    # next_actions = re.findall('"([^"]*)"', response_str)
-    ## If no such quoted actions found, consider entire generation as next action
-    # if not next_actions:
-    #    next_actions = [response['choices'][0]['message']['content']]
 
     # actions should be between "###" blocks. Take the first one (in case it generated multiple ones) as the next action
     possibleActions = response_str.split("###")
@@ -290,12 +302,9 @@ def get_clin_sw_next_action_multi_turn(task,
     if len(possibleActions) > 1:
         reasoningStr = possibleActions[0]
         next_action_str = possibleActions[1].lower().strip()  # The first index should be it's reasoning, the second should be it's action.
-        # It's possible it might put multiple actions in the next_action_str, that are comma delimited. Trim out all but the first one.
-        # next_action_str = next_action_str.split(",")[0].lower().strip()
 
-    # next_action_str = next_actions[0].lower().strip()
-    next_action_str = next_action_str.replace(".", "").replace("i would like to ", "") # .split(' and ')[0]
-    response['pred_next_action'] = next_action_str
+    next_action_str = next_action_str.replace(".", "").replace("i would like to ", "")
+    response_dict['pred_next_action'] = next_action_str
 
     # Check to make sure the reasoningStr and next actions are not blank (to prevent the data structure from crashing with blank strings)
     if len(reasoningStr) < 1:
@@ -303,17 +312,10 @@ def get_clin_sw_next_action_multi_turn(task,
     if (len(next_action_str) < 1):
         next_action_str = " UNKNOWN "
 
-    response['reasoningStr'] = reasoningStr
+    response_dict['reasoningStr'] = reasoningStr
 
-    # Append ChatGPT response and our action selection to message history
-    new_messages.append({
-        "role": "assistant", "content": response_str})
-    new_messages.append({
-        "role": "user", "content": f"Selected action: {next_action_str}"
-    })
-    # print(f"pred_next_action:{next_actions[0]}")
+    return response_dict
 
-    return response
 
 def success_map(metric, score):
     feedback = ''
@@ -335,35 +337,32 @@ def success_map(metric, score):
     
     return feedback
 
+
 def get_trace(data, truncate=False, quadrant=1):
     trace = "\n\nCURRENT TRACE\n\n"
     trace += "Task: {}\n\n".format(data["taskDescription"])
     if data['history']:
         for item in data['history']:
-            # print(item)
-            # trace += "Rationale: {}\n".format(item.get('rationale', ""))
             trace += "Action: {}\n".format(item['action'])
             if truncate:
                 trace += "Observation: {}\n\n".format(item['observation'].split('.')[0])
             else:
                 trace += "Observation: {}\n\n".format(item['observation'])
 
-            # optional cummulative PR
-
-        # we assume if PRF is not computed, we will not have this field
         trace += "\n\nEVALUATION REPORT:\n"
         trace += "REWARD_FINAL: {}. This means: {}\n".format(data['finalScore'], success_map('reward', data['finalScore']))
 
     return trace
 
+
 def format_memory(memories):
-    # memories list of last-k jsons
     memory_string = "\n\nPREVIOUS LEARNINGS\n\n"
     for m in memories:
         if m['summary']:
+            deduped_summary = deduplicate_text(m['summary'])
             memory_string += "TASK: {}\n".format(m['taskDescription'])
             memory_string += "EPISODE: {}\n".format(m['episodeIdx'])
-            memory_string += "LEARNINGS: {}\n".format(m['summary'])
+            memory_string += "LEARNINGS: {}\n".format(deduped_summary)
 
             memory_string += "\nEVALUATION REPORT (for the attempt associated with the learning):\n"
             final_score = m['finalScore']
@@ -372,6 +371,7 @@ def format_memory(memories):
     
     return memory_string
 
+
 def summarize(trace, summary_prompt, system_prompt, demo_examples="", prev_memories="", model="gpt4", temp=0.7, tokens=1000):
     print(f"trace:{trace}")
     print(f"summary_prompt:{summary_prompt}")
@@ -379,10 +379,11 @@ def summarize(trace, summary_prompt, system_prompt, demo_examples="", prev_memor
     print(f"demo_examples:{demo_examples}")
     print(f"prev_memories:{prev_memories}")
 
+    client = OpenAI(base_url="http://localhost:4000/v1", api_key="EMPTY")  # Hardcode for local server
     response = None
     while response is None:
         try:
-            response = openai.ChatCompletion.create(
+            response = client.chat.completions.create(
                     model=model,
                     messages=[{"role": "system", "content": system_prompt},
                             {"role": "user", "content": summary_prompt},
@@ -400,8 +401,9 @@ def summarize(trace, summary_prompt, system_prompt, demo_examples="", prev_memor
             print("GPT3 error. Retrying in 10 seconds...")
             time.sleep(2)
 
-    output_summary = response["choices"][0]["message"]["content"]
+    output_summary = response.choices[0].message.content
     return output_summary
+
 
 def summarize_trace_for_preconditions_sTsW(current_run,
                         prev_runs_list=None,
@@ -418,7 +420,6 @@ def summarize_trace_for_preconditions_sTsW(current_run,
 
     prev_memories = ""
     meta_summary_prompt = ''
-    # meta_summary_prompt_q3 = ''
     
     if len(prev_runs_list) < use_last_k_memories:
         if quadrant == 2:
@@ -453,7 +454,7 @@ def summarize_trace_for_preconditions_sTsW(current_run,
     final_prompt = summary_prompt + '\n\n' + meta_summary_prompt + '\n\n' + task_prompt
 
     # check trace length
-    total_budget = 7500 - 1000
+    total_budget = 20000 - 1000  # Increased budget
     tokens_insturction = getTokenLength(final_prompt)
     total_budget -= tokens_insturction
     trace = get_trace(current_run)
@@ -481,7 +482,7 @@ def summarize_trace_for_preconditions_sTsW(current_run,
             trace = get_trace(current_run, truncate=True)
             tokens_trace = getTokenLength(trace)
             if tokens_trace + tokens_prev_mem > total_budget:
-                trace = ' '.join(trace.split(' ')[(total_budget - tokens_trace - tokens_prev_mem):])
+                trace = ' '.join(trace.split(' ')[: (total_budget - tokens_prev_mem) // 2])  # Truncate to half words if needed
             memories['trace'] = trace
 
     final_trace = memories['trace'] 

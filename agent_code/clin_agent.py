@@ -11,7 +11,22 @@ from model_utils import get_best_matched_action_using_sent_transformer,\
     summarize_trace_for_preconditions_sTsW
 import torch
 from sentence_transformers import SentenceTransformer
-import json
+
+# No need for global client; functions handle it
+
+def fetch_goal_progress(env):
+    """
+    Return the current goal-progress as a dict,
+    trying both available APIs.
+    """
+    if hasattr(env, "get_goal_progress"):
+        return env.get_goal_progress()
+    if hasattr(env, "getGoalProgressStr"):
+        return json.loads(env.getGoalProgressStr())
+    raise AttributeError(
+        "No supported goal-progress API; inspected: "
+        + str([m for m in dir(env) if "goal" in m.lower()])
+    )
 
 
 def clinAgent(args):
@@ -90,7 +105,7 @@ def clinAgent(args):
     summaryFile = open(summaryfname, "w")
     env = ScienceWorldEnv("", args['jar_path'], envStepLimit=args['env_step_limit'])
 
-    taskNames = env.getTaskNames()
+    taskNames = env.get_task_names()
     print("Task Names: " + str(taskNames))
 
     num_test_variations_to_run = 1
@@ -99,7 +114,7 @@ def clinAgent(args):
         taskName = taskNames[taskIdx]        # Just get first task
         env.load(taskName, 0, "")  
         print("Task Name: " + taskName)
-        print("Task Description: " + str(env.getTaskDescription()))
+        print("Task Description: " + str(env.get_task_description()))
 
         for varIdx in [var_num]:
             # Initialize environment
@@ -121,10 +136,10 @@ def clinAgent(args):
                 initialObs, initialDict = env.reset()
 
                 # Example accessors
-                templates, lut = env.getPossibleActionObjectCombinations()
+                templates, lut = env.get_possible_action_object_combinations()
                 print("Task Name: " + taskName)
                 print("Task Variation: " + str(varIdx))
-                print("Task Description: " + str(env.getTaskDescription()) )
+                print("Task Description: " + str(env.get_task_description()) )
 
                 gold_memory = ""
                 if use_gold_memory_in_ep0:
@@ -144,7 +159,7 @@ def clinAgent(args):
                 previous_actions = []
                 previous_observations = []
                 rationaleHistory = [""]
-                subgoalHistory = [env.getGoalProgressJSON()]
+                subgoalHistory = [fetch_goal_progress(env)]
                 rawActionHistory = [generated_action_str]
                 topNActionHistory = [{}]
                 stepwise_prf_history = []
@@ -168,7 +183,7 @@ def clinAgent(args):
                         score_positive = score
 
                     # Store subgoal progress
-                    subgoalHistory.append(env.getGoalProgressJSON())
+                    subgoalHistory.append(fetch_goal_progress(env))
 
                     print("\n>>> " + observation)
                     print("Reward: " + str(reward))
@@ -194,11 +209,11 @@ def clinAgent(args):
                         num_retries += 1
 
                         response = get_clin_sw_next_action_multi_turn(
-                                task=env.getTaskDescription(),
+                                task=env.get_task_description(),
                                 current_obs=env.look(),
                                 current_inventory=env.inventory(),
-                                objects_set=env.getPossibleObjects(),
-                                next_actions_set=env.getPossibleActions(),
+                                objects_set=env.get_possible_objects(),
+                                next_actions_set=env.get_possible_actions(),
                                 previous_rationales=previous_rationales,
                                 previous_actions=previous_actions,
                                 previous_observations=previous_observations,
@@ -240,7 +255,7 @@ def clinAgent(args):
                                     valid_actions_list = [str(x) for x in range(len(observation.split('\n')[1:]))]
 
                             if len(valid_actions_list) > 0:
-                                # Time how long it takes to map generated next_action to one of the valid_actions?
+                                # Time how it takes to map generated next_action to one of the valid_actions?
                                 start = time.time()
                                 best_match_action, topN = get_best_matched_action_using_sent_transformer(
                                     allowed_actions=valid_actions_list,
@@ -287,14 +302,14 @@ def clinAgent(args):
                             break
 
                         # Check if the max num steps (here, 1.5*gold_sequence_length) have been executed.  If so, exit
-                        if len(previous_actions) >= 1.5*len(env.getGoldActionSequence()):
+                        if len(previous_actions) >= 1.5*len(env.get_gold_action_sequence()):
                             print("Model generated an action sequence which is 1.5 times longer than"
                                   "the gold action sequence without succeeding at the task.  Exiting.")
                             earlyStop = True
                             break
 
                 print("Goal Progress:")
-                print(env.getGoalProgressStr())
+                print(fetch_goal_progress(env))
                 time.sleep(1)
 
                 # Episode finished -- Record the final scoref
@@ -313,11 +328,11 @@ def clinAgent(args):
                 print ("isCompleted: " + str(isCompleted))
 
                 # Show gold path
-                gold_path = str(env.getGoldActionSequence())
+                gold_path = str(env.get_gold_action_sequence())
                 print("Gold Path:" + gold_path)
 
                 # Get run history
-                runHistory = env.getRunHistory()
+                runHistory = env.get_run_history()
 
                 # Add rationales to run history
                 for idx, rationaleStr in enumerate(rationaleHistory):
@@ -347,7 +362,7 @@ def clinAgent(args):
                                                         prev_runs_list=prev_runs_list,
                                                         gold_run=None,
                                                         demo_examples=None,
-                                                        model="gpt-4",
+                                                        model="gpt-oss-20b",
                                                         temp=temperature,
                                                         quadrant=quadrant,
                                                         meta_summary=gold_memory if quadrant == 2 else '',
