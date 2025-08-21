@@ -2,6 +2,7 @@ import json
 
 import time
 import re
+import os
 
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -95,10 +96,10 @@ def get_best_matched_action_using_sent_transformer(allowed_actions, query, model
 
 
 def run_chatgpt_query_multi_turn(messages,
-                      model_name="gpt-3.5-turbo",  # pass "gpt4" for more recent model output
-                      max_tokens=256,
-                      temperature=0.0):
-    client = OpenAI(base_url="http://localhost:4000/v1", api_key="EMPTY")  # Hardcode for local server
+                                 model_name="gpt-3.5-turbo",
+                                 max_tokens=256,
+                                 temperature=0.0):
+    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.getenv("OPENROUTER_API_KEY"))  # For OpenRouter
     response = None
     while response is None:
         try:
@@ -110,8 +111,8 @@ def run_chatgpt_query_multi_turn(messages,
             )
         except Exception as e:
             print(e)
-            print("GPT3 error. Retrying in 10 seconds...")
-            time.sleep(2)
+            print("API error. Retrying in 10 seconds...")
+            time.sleep(10)
 
     return response
 
@@ -379,7 +380,7 @@ def summarize(trace, summary_prompt, system_prompt, demo_examples="", prev_memor
     print(f"demo_examples:{demo_examples}")
     print(f"prev_memories:{prev_memories}")
 
-    client = OpenAI(base_url="http://localhost:4000/v1", api_key="EMPTY")  # Hardcode for local server
+    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.getenv("OPENROUTER_API_KEY"))  # For OpenRouter
     response = None
     while response is None:
         try:

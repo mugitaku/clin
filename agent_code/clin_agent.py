@@ -362,7 +362,7 @@ def clinAgent(args):
                                                         prev_runs_list=prev_runs_list,
                                                         gold_run=None,
                                                         demo_examples=None,
-                                                        model="gpt-oss-20b",
+                                                        model="gpt-4",
                                                         temp=temperature,
                                                         quadrant=quadrant,
                                                         meta_summary=gold_memory if quadrant == 2 else '',
