@@ -362,7 +362,7 @@ def clinAgent(args):
                                                         prev_runs_list=prev_runs_list,
                                                         gold_run=None,
                                                         demo_examples=None,
-                                                        model="gpt-4",
+                                                        model=gpt_model,
                                                         temp=temperature,
                                                         quadrant=quadrant,
                                                         meta_summary=gold_memory if quadrant == 2 else '',
@@ -436,15 +436,15 @@ def parse_args():
     parser = argparse.ArgumentParser(desc)
     parser.add_argument("--jar_path", type=str,
                         help="Path to the ScienceWorld jar file. Default: use builtin.")
-    parser.add_argument("--task-num", type=str, default="4",
+    parser.add_argument("--task_num", type=str, default="4",
                         help="Specify the task number to play. Default: %(default)s")
-    parser.add_argument("--var-num", type=int, default=1,
+    parser.add_argument("--var_num", type=int, default=1,
                         help="Specify the task variation number to play. Default: %(default)s")
-    parser.add_argument("--env-step-limit", type=int, default=100,
+    parser.add_argument("--env_step_limit", type=int, default=100,
                         help="Maximum number of steps per episode. Default: %(default)s")
-    parser.add_argument("--num-episodes", type=int, default=2,
+    parser.add_argument("--num_episodes", type=int, default=2,
                         help="Number of episodes to play. Default: %(default)s")
-    parser.add_argument("--gpt-model", type=str, default="gpt-4-0613",
+    parser.add_argument("--gpt_model", type=str, default="gpt-4-0613",
                         help="Choose GPT model to use ['gpt-3.5-turbo', 'gpt-4-0613']. Default: %(default)s")
     parser.add_argument("--summarize_end_of_episode", type=int, default=1,
                         help="Summarize at the end of episode (for preconditions)")
@@ -452,32 +452,32 @@ def parse_args():
                         help="Select device to be used by sentence transformer. ['cpu', 'cuda', 'cuda:0']")
     parser.add_argument("--temperature", type=float, default=0.0,
                         help="Select temperature for running chatgpt completion api")
-    parser.add_argument("--use-gold-memory-in-ep0", type=int, default=0,
+    parser.add_argument("--use_gold_memory_in_ep0", type=int, default=0,
                         help="Use gold memory and seed learnings in episode 0.")
-    parser.add_argument("--gold-traces", type=str, default="",
+    parser.add_argument("--gold_traces", type=str, default="",
                         help="Gold action sequences and corresponding observations.")
-    parser.add_argument("--use-last-k-memories", type=int, default=3,
+    parser.add_argument("--use_last_k_memories", type=int, default=3,
                         help="Use last k memories when summarizing learnings.")
     parser.add_argument("--quadrant", type=int,
                         help="Specify the quadrant in which the model is being evaluated."\
                         "1: (adapt) same task/same world, "\
                         "2: (gen-env) same task/different world, "\
                         "3: (gen-task) different task, same world")
-    parser.add_argument("--output-path-prefix", default="save-histories",
+    parser.add_argument("--output_path_prefix", default="save-histories",
                         help="Path prefix to use for saving episode transcripts. Default: %(default)s")
     
     simplification_group = parser.add_argument_group('Game simplifications')
-    simplification_group.add_argument("--simplifications-preset", choices=['easy'],
+    simplification_group.add_argument("--simplifications_preset", choices=['easy'],
                                       help="Choose a preset among: 'easy' (apply all possible simplifications).")
     simplification_group.add_argument("--teleport", action="store_true",
                                       help="Lets agents instantly move to any location.")
-    simplification_group.add_argument("--self-watering-plants", action="store_true",
+    simplification_group.add_argument("--self_watering_plants", action="store_true",
                                       help="Plants do not have to be frequently watered.")
-    simplification_group.add_argument("--open-containers", action="store_true",
+    simplification_group.add_argument("--open_containers", action="store_true",
                                       help="All containers are opened by default.")
-    simplification_group.add_argument("--open-doors", action="store_true",
+    simplification_group.add_argument("--open_doors", action="store_true",
                                       help="All doors are opened by default.")
-    simplification_group.add_argument("--no-electrical", action="store_true",
+    simplification_group.add_argument("--no_electrical", action="store_true",
                                       help="Remove the electrical actions (reduces the size of the action space).")
 
     args = parser.parse_args()

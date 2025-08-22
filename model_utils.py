@@ -99,7 +99,8 @@ def run_chatgpt_query_multi_turn(messages,
                                  model_name="gpt-3.5-turbo",
                                  max_tokens=256,
                                  temperature=0.0):
-    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.getenv("OPENROUTER_API_KEY"))  # For OpenRouter
+    client = OpenAI(base_url=os.getenv("OPENAI_API_BASE", "http://localhost:4000/v1"), 
+                    api_key=os.getenv("OPENAI_API_KEY", "EMPTY"))
     response = None
     while response is None:
         try:
@@ -380,7 +381,8 @@ def summarize(trace, summary_prompt, system_prompt, demo_examples="", prev_memor
     print(f"demo_examples:{demo_examples}")
     print(f"prev_memories:{prev_memories}")
 
-    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=os.getenv("OPENROUTER_API_KEY"))  # For OpenRouter
+    client = OpenAI(base_url=os.getenv("OPENAI_API_BASE", "http://localhost:4000/v1"), 
+                    api_key=os.getenv("OPENAI_API_KEY", "EMPTY"))
     response = None
     while response is None:
         try:
