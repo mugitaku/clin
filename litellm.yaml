@@ -1,0 +1,15 @@
+litellm_settings:
+    drop_params: true
+
+model_list:
+  - model_name: gemini-2.0-flash-lite
+    litellm_params:
+      model: gemini/gemini-2.0-flash-lite
+      api_key: ${GEMINI_API_KEY}
+      api_base: https://generativelanguage.googleapis.com/v1beta/openai/
+
+  - model_name: gemini-2.5-flash
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: ${GEMINI_API_KEY}
+      api_base: https://generativelanguage.googleapis.com/v1beta/openai/

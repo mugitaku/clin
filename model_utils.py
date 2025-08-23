@@ -1,29 +1,23 @@
 import json
-
 import time
 import re
 import os
-
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-
-import tiktoken  # pip install tiktoken
-
+import tiktoken
 import numpy as np
-
-from openai import OpenAI  # For new client
-
+import litellm
+litellm.drop_params = True
+import google.generativeai as genai
 # Tokenizer
 from utils import remove_stopwords_and_lemmatize
-
 tokenizer = tiktoken.get_encoding("cl100k_base")
 MAXTOKENSINHISTORY = 2000
 
 # Get the number of tokens for a string, measured using tiktoken
 def getTokenLength(strIn):
     tokens = tokenizer.encode(strIn)
-    numTokens = len(tokens)
-    return numTokens
+    return len(tokens)
 
 
 def deduplicate_text(text: str) -> str:
@@ -99,16 +93,15 @@ def run_chatgpt_query_multi_turn(messages,
                                  model_name="gpt-3.5-turbo",
                                  max_tokens=256,
                                  temperature=0.0):
-    client = OpenAI(base_url=os.getenv("OPENAI_API_BASE", "http://localhost:4000/v1"), 
-                    api_key=os.getenv("OPENAI_API_KEY", "EMPTY"))
     response = None
     while response is None:
         try:
-            response = client.chat.completions.create(
+            response = litellm.completion(
                 model=model_name,
                 messages=messages,
                 max_tokens=max_tokens,
-                temperature=temperature
+                temperature=temperature,
+                timeout=600
             )
         except Exception as e:
             print(e)
@@ -285,13 +278,62 @@ def get_clin_sw_next_action_multi_turn(task,
     #       f"\nobjects_set: {objects_set}\nnext_actions_set:{next_actions_set}")
     # print(f"response:{response}")
     if out_logs_file:
-        out_logs_file.write(f"next action\t{prompt_str}\t{json.dumps(response.dict())}")  # Use .dict() for new lib
+        try:
+            out_logs_file.write(f"next action\t{prompt_str}\t{json.dumps(response.dict())}")  # Use .dict() for new lib
+        except Exception:
+            # Best-effort logging of response
+            try:
+                out_logs_file.write(f"next action\t{prompt_str}\t{str(response)}")
+            except Exception:
+                pass
 
-    # Sometimes ChatGPT returns a long string with actions mentioned in ""
-    # Extract strings within double quotes
+    # Robustly extract text content from the response object returned by litellm (or other adapters).
+    response_str = None
+    response_dict = None
+    try:
+        # Preferred: object has .choices[0].message.content
+        response_str = response.choices[0].message.content
+    except Exception:
+        pass
 
-    response_str = response.choices[0].message.content
-    response_dict = response.dict()  # Convert to dict for compatibility
+    # Try dict-like extraction
+    if response_str is None:
+        try:
+            response_dict = response.dict() if hasattr(response, 'dict') else (response if isinstance(response, dict) else None)
+            if response_dict is not None:
+                # nested defensive gets
+                choices = response_dict.get('choices') if isinstance(response_dict, dict) else None
+                if choices and len(choices) > 0:
+                    first = choices[0]
+                    # support shape: {'message': {'content': '...'}} or {'text': '...'}
+                    if isinstance(first, dict):
+                        msg = first.get('message') or {}
+                        if isinstance(msg, dict) and msg.get('content'):
+                            response_str = msg.get('content')
+                        elif first.get('text'):
+                            response_str = first.get('text')
+                # fallback: top-level text
+                if not response_str and isinstance(response_dict, dict):
+                    for k in ('text', 'content'):
+                        if k in response_dict and response_dict[k]:
+                            response_str = response_dict[k]
+        except Exception:
+            response_dict = None
+
+    # Final fallback: string representation
+    if response_str is None:
+        try:
+            response_str = str(response)
+        except Exception:
+            response_str = ""
+
+    # Ensure response_dict is set (best-effort)
+    if response_dict is None:
+        try:
+            response_dict = response.dict() if hasattr(response, 'dict') else ({'raw': str(response)})
+        except Exception:
+            response_dict = {'raw': str(response)}
+
     response_dict['response_str'] = response_str
     # print("RAW RESPONSE STRING:")
     # print(response_str)
@@ -381,12 +423,10 @@ def summarize(trace, summary_prompt, system_prompt, demo_examples="", prev_memor
     print(f"demo_examples:{demo_examples}")
     print(f"prev_memories:{prev_memories}")
 
-    client = OpenAI(base_url=os.getenv("OPENAI_API_BASE", "http://localhost:4000/v1"), 
-                    api_key=os.getenv("OPENAI_API_KEY", "EMPTY"))
     response = None
     while response is None:
         try:
-            response = client.chat.completions.create(
+            response = litellm.completion(
                     model=model,
                     messages=[{"role": "system", "content": system_prompt},
                             {"role": "user", "content": summary_prompt},
@@ -401,10 +441,19 @@ def summarize(trace, summary_prompt, system_prompt, demo_examples="", prev_memor
                 )
         except Exception as e:
             print(e)
-            print("GPT3 error. Retrying in 10 seconds...")
-            time.sleep(2)
+            print("API error. Retrying in 10 seconds...")
+            time.sleep(10)
 
-    output_summary = response.choices[0].message.content
+    raw_output = response.choices[0].message.content
+    
+    matches = list(re.finditer(r"^\s*1\..*", raw_output, re.MULTILINE | re.DOTALL))
+    if matches:
+        last_match_start = matches[-1].start()
+        output_summary = raw_output[last_match_start:].strip()
+    else:
+        output_summary = raw_output
+        
+    print("CLEANED SUMMARY:", output_summary)
     return output_summary
 
 

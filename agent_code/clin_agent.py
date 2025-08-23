@@ -35,7 +35,7 @@ def clinAgent(args):
     var_num = int(args["var_num"])
     print(f"Running CLIN agent for taskIdx:{task_num}, varIdx:{var_num}")
     exitCommands = ["quit", "exit"]
-    sent_transformer_model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2', device=args['device'])
+    sent_transformer_model = SentenceTransformer('BAAI/bge-large-en-v1.5', device=args['device'])
 
 
     ## load gold summaries obtained from gold traces
