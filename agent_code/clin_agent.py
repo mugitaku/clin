@@ -271,7 +271,7 @@ def clinAgent(args):
                                 # Check top-1 action match score, and if the score < threshold then 
                                 best_match_score = topN[0][1]
 
-                            if best_match_score > 0.8 or \
+                            if best_match_score > 0.9 or \
                                 best_match_action in ['0','1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20'] or (num_retries==max_num_retries_executor) or (len(valid_actions_list) == 0) :
                                 generated_action_str = best_match_action
                             else:
