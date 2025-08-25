@@ -2,13 +2,11 @@ import json
 import time
 import re
 import os
-from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import tiktoken
 import numpy as np
 import litellm
 litellm.drop_params = True
-import google.generativeai as genai
 # Tokenizer
 from utils import remove_stopwords_and_lemmatize
 tokenizer = tiktoken.get_encoding("cl100k_base")
