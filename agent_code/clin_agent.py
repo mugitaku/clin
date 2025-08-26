@@ -3,7 +3,8 @@ import random
 import argparse
 import os
 import json
-
+from dotenv import load_dotenv
+load_dotenv()
 from scienceworld import ScienceWorldEnv
 
 from model_utils import get_best_matched_action_using_sent_transformer,\
