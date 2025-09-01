@@ -103,8 +103,9 @@ def run_chatgpt_query_multi_turn(messages,
             )
         except Exception as e:
             print(e)
-            print("API error. Retrying in 10 seconds...")
-            time.sleep(10)
+            print("API error. Retrying in 30 seconds...")
+            print()
+            time.sleep(30)
 
     return response
 
@@ -439,8 +440,9 @@ def summarize(trace, summary_prompt, system_prompt, demo_examples="", prev_memor
                 )
         except Exception as e:
             print(e)
-            print("API error. Retrying in 10 seconds...")
-            time.sleep(10)
+            print("API error. Retrying in 30 seconds...")
+            print()
+            time.sleep(30)
 
     raw_output = response.choices[0].message.content
     
